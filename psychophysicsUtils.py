@@ -32,7 +32,7 @@ rcParams['figure.titlesize']='medium'
 rcParams['axes.prop_cycle']=cycler('color', ['#66c2a5','#fc8d62','#8da0cb','#e78ac3','#a6d854','#ffd92f','#e5c494','#b3b3b3'])
 
 
-
+#converts string times into scalar, units of seconds 
 def scalarTime(strTime): # strTime of form 'HH:MM:SS:msmsmsmsms.....'
 	hours = int(strTime[0:2])*60*60
 	minutes = int(strTime[3:5])*60
@@ -41,48 +41,116 @@ def scalarTime(strTime): # strTime of form 'HH:MM:SS:msmsmsmsms.....'
 	return hours+minutes+seconds+milliseconds #time in s
 
 
+"""
+Loads pupil data. Defaults to EyeLink which has name format "name_pupillometry.csv" else tries pupilLabs "name_pupillometryPL"
+If EyeLink, then data file has Bonsai timesyncs saved within it, these are used to sync time with Bonsai machine.
+If PupilLabs, timesync data saved in separate csv "name_timesync.csv". These are loaded and used to sync time.
 
-def loadAndSyncPupilData(name):
+Returns
+•pupilDiams: array of pupil diameters, raw
+•times: time (corresponding to time on the Bonsai machine, for each pupil diameter reading)
+•dt: average time step
+"""
+def loadAndSyncPupilData(name,defaultMachine='EL',eye='right'): #EL
+	loadComplete = False
+	if defaultMachine == 'EL':
+		fileName = './Data/'+name+'_pupillometry.csv'
+		try:
+			open(fileName,encoding="ISO-8859-1")
+			pupilDiams = [] #create arrays
+			times = []
 
-	pupilDiams = []
-	times = []
+			#open and read file line by line 
+			with open(fileName,encoding="ISO-8859-1") as f: 
+				lines = f.readlines()
+				lagTime = 0 #keeps a running estimate of the lag time between pupillometry computer and the bonsai one 
+				errorCount = 0
+				try: del firstSyncSignalIdx 
+				except NameError: pass 
+				print("Loading and synchronising pupillometry data (EyeLink): ", end = "")
+				for i in tqdm(np.arange(len(lines))):            
+					words = lines[i].split()
+					if len(words) <= 2:
+						continue
+					isSyncLine = (words[0][:3] == 'MSG' and words[2][:6] == 'SYNCSS') #test if it's a time sync line
+					isDataLine = (words[0].isnumeric() == True) #test if it's a data line 
+					if not isSyncLine and not isDataLine: #else pass 
+						continue
+					try: 
+						if isSyncLine: #then update the lag time 
+							pupillometryTime = float(words[1]) / 1000
+							syncTime = scalarTime(words[2][6:])
+							lagTime = syncTime - pupillometryTime # update lag time 
+							try: firstSyncSignalIdx #save index so we can chop all data before this first sync
+							except NameError: 
+								firstSyncSignalIdx = i
+							continue
+						elif isDataLine: #else scrape time, convert to computer time and scrape pupil diam and save these
+							pupillometryTime = float(words[0]) / 1000
+							eventTime = lagTime + pupillometryTime #in reference frame of computer, not pupillometry machine
+							pupilDiam = float(words[-2])
+							pupilDiams.append(pupilDiam)
+							times.append(eventTime)
+					except: 
+						errorCount += 1
+						pass 
+				print("%g errors in total" %errorCount)
 
-	with open('./Data/'+name+'_pupillometry.csv') as f: 
-		lines = f.readlines()
-		lagTime = 0
-		try: del firstSyncSignalIdx
-		except NameError: pass 
-		print("\n \nLoading and synchronising pupillometry data (EyeLink)")
-		for i in tqdm(np.arange(len(lines))):            
-			words = lines[i].split()
-			if len(words) <= 2:
-				continue
-			isSyncLine = (words[0][:3] == 'MSG' and words[2][:6] == 'SYNCSS')
-			isDataLine = (words[0].isnumeric() == True)
-			if not isSyncLine and not isDataLine: 
-				continue
-			if isSyncLine: #then update the lag time 
-				pupillometryTime = float(words[1]) / 1000
-				syncTime = scalarTime(words[2][6:])
-				lagTime = syncTime - pupillometryTime # update lag time 
-				try: firstSyncSignalIdx #save index so we can chop all data before this first sync
-				except NameError: 
-					firstSyncSignalIdx = i
-				continue
-			elif isDataLine: #else scrape time, convert to computer time and scrape pupil diam and save these
-				pupillometryTime = float(words[0]) / 1000
-				eventTime = lagTime + pupillometryTime #in reference frame of computer, not pupillometry machine
-				pupilDiam = float(words[-2])
-				pupilDiams.append(pupilDiam)
-				times.append(eventTime)
+			#converts to arrays and deletes data before firstSyncSignal since true time is unknown
+			pupilDiams = np.array(pupilDiams)[firstSyncSignalIdx:] 
+			times = np.array(times)[firstSyncSignalIdx:]
+			dt = np.mean((np.roll(times,-1) - times)[1:-1]); print('dt = %.4fs' %dt)
+			print("Percentage data missing : %.2f %%" %(100*len(np.where(pupilDiams == 0)[0])/len(pupilDiams)))
+			loadComplete=True
+			
+		except FileNotFoundError: 
+			print("No EyeLink (default) datafile found, trying PupilLabs")
 
-	pupilDiams = np.array(pupilDiams)[firstSyncSignalIdx:] 
-	times = np.array(times)[firstSyncSignalIdx:]
-	dt = np.mean((np.roll(times,-1) - times)[1:-1]); print('dt = %.4fs' %dt)
-	print("Percentage data missing : %.2f %%" %(100*len(np.where(pupilDiams == 0)[0])/len(pupilDiams)))   
+	#note this could be much better, the model reports a 'confidence' which we could employ
+	if ((defaultMachine == 'PL') or (loadComplete == False)):  #try PupilLabs data file 
+		fileName = './Data/'+name+'_pupillometryPL.csv'
+		try: open(fileName)
+		except FileNotFoundError: 
+			print("No PupilLabs (fall back) data file found")
+		pupilDiams_pl = []
+		times_pl = []
+		if eye=='right': eyeID='0'
+		elif eye=='left': eyeID='1'
+
+		#loads time sync data files and returns arrays of simultaneous pupilLabTimestamps and computerTimestamps for syncing
+		computerTimestamp, pupilLabTimestamp = extractSyncTimes(name)
+
+		with open(fileName) as f: 
+			lines = f.readlines()
+			print("Loading and synchronising pupillometry data (PupilLabs)")
+			for i in tqdm(np.arange(len(lines))): 
+				data = lines[i].split(",")
+				if i == 0: 
+					continue
+				if ((data[2] != eyeID) or (data[7][:5] != 'pye3d')): 
+					pass
+				else: 
+					raw_time = float(data[0])
+					idx = np.argmin(np.abs(pupilLabTimestamp - raw_time))
+					lag = computerTimestamp[idx] - pupilLabTimestamp[idx]
+					time = raw_time + lag
+					times_pl.append(time)
+					pupilDiam = float(data[6])
+					pupilDiams_pl.append(pupilDiam)
+		#convert to array 
+		pupilDiams = np.array(pupilDiams_pl)
+		times = np.array(times_pl)
+		dt = np.mean((np.roll(times,-1) - times)[1:-1]); print('dt = %.4fs' %dt)
+		print("Percentage data missing : %.2f %%" %(100*len(np.where(pupilDiams == 0)[0])/len(pupilDiams)))  
+		loadComplete = True
 
 	return pupilDiams, times, dt
 
+"""
+Loads timesync file made when pupillabs is recorded.
+Returns two array: one for timestamps from computer (presumably Bonsai or otherwise is running here)
+one for simultaneous pupilLabs timestamps
+"""
 def extractSyncTimes(name):
 	computerTimestamp = []
 	pupilLabTimestamp = []
@@ -99,47 +167,9 @@ def extractSyncTimes(name):
 	pupilLabTimestamp = np.array(pupilLabTimestamp)
 	return computerTimestamp, pupilLabTimestamp
 
-
-def loadAndSyncPupilData_PupilLabs(name):
-	pupilDiams_pl = []
-	times_pl = []
-
-	computerTimestamp, pupilLabTimestamp = extractSyncTimes(name)
-
-	with open('./Data/'+name+'_pupillometryPL.csv') as f: 
-		lines = f.readlines()
-
-		print("\n \nLoading and synchronising pupillometry data (PupilLabs)")
-		for i in tqdm(np.arange(len(lines))): 
-
-			data = lines[i].split(",")
-
-			if i == 0: 
-				continue
-			if ((data[2] != '0') or (data[7][:5] != 'pye3d')):
-				pass
-			else: 
-				raw_time = float(data[0])
-				idx = np.argmin(np.abs(pupilLabTimestamp - raw_time))
-				lag = computerTimestamp[idx] - pupilLabTimestamp[idx]
-				time = raw_time + lag
-
-				times_pl.append(time)
-				pupilDiam = float(data[6])
-				pupilDiams_pl.append(pupilDiam)
-
-
-
-	pupilDiams = np.array(pupilDiams_pl)
-	times = np.array(times_pl)
-	dt = np.mean((np.roll(times,-1) - times)[1:-1]); print('dt = %.4fs' %dt)
-	print("Percentage data missing : %.2f %%" %(100*len(np.where(pupilDiams == 0)[0])/len(pupilDiams)))   
-
-	return pupilDiams, times, dt
-
-
-
-
+"""
+Plots two arrays and a histogram showing full timeseries and zoomed in time series of pupil diameters
+"""
 def plotPupilDiams(pupilDiams, times, dt, zoomRange = [0,60], saveName = None, hist=True, ymin=0, ymax=None, color='C0'):
 	if ymax == None: 
 		ymax = np.max(pupilDiams)
@@ -149,7 +179,7 @@ def plotPupilDiams(pupilDiams, times, dt, zoomRange = [0,60], saveName = None, h
 	ax[0].set_ylim([ymin,ymax])
 	ax[0].set_ylabel('Pupil diameter')
 	ax[0].set_xlabel('Time from start of recording / s')
-	ax[0].set_title('Raw data (60s)')
+	ax[0].set_title('Raw data (%gs)'%(zoomRange[1]-zoomRange[0]))
 
 	ax[1].plot((times - times[0]),pupilDiams,c=color)
 	ax[1].set_ylim([ymin,ymax])
@@ -173,6 +203,71 @@ def plotPupilDiams(pupilDiams, times, dt, zoomRange = [0,60], saveName = None, h
 
 	return fig, ax
 
+
+"""
+Performs interpolation to remove zero-values from the data
+If wherever a range of pupil diamteres are zero these are replaced with linear interpolation between 'gapExtension' seconds before and after  assuming these are non-zero (moving further out if they aren't).
+The values +- gapExtension are themselves also replaced since the blink or whatever maybe cause a smooth drop to zero we also want to remove
+
+"""
+def interpolatePupilDiams_new(pupilDiams, times, dt, gapExtension = 0.2):
+	interpolatedPupilDiams = pupilDiams.copy()
+	i = 0
+	jump_dist = int(gapExtension / dt) #interpolates between gapExtension seconds before and after the points where it they fell to zero
+
+	print("Interpolating missing values: ", end="")
+	totalInterpolated = 0
+	while True:
+
+		
+		if i >= len(pupilDiams): break 
+
+		if pupilDiams[i] != 0: #the value exists and there is no problem
+			interpolatedPupilDiams[i] = pupilDiams[i] 
+			i += 1
+
+		elif pupilDiams[i] == 0:#do some interpolation
+
+			k = jump_dist
+			while True: 
+				if i-k < 0: #edge case where we fall off array 
+					start, startidx = np.mean(pupilDiams), 0
+					break
+				elif i-k >= 0:
+					if pupilDiams[i-k] == 0:
+						k += 1 #keep extending till you get non-zero val
+					elif pupilDiams[i-k] != 0:
+						start, startidx = pupilDiams[i-k], i-k+1
+						break
+			
+			j = i 
+			while True: 
+				while True: #find 'end' of blink
+					if j >= len(pupilDiams):
+						j = j-1
+						break
+					if pupilDiams[j] == 0:
+						j += 1
+					elif pupilDiams[j] !=0:
+						j = j-1
+						break
+
+				if j+k >= len(pupilDiams): #edge case where we fall off array 
+					end, endidx = np.mean(pupilDiams), len(pupilDiams)
+					break
+				elif j+k < len(pupilDiams):
+					if pupilDiams[j+k] == 0:
+						k += 1 #keep extending till you get non-zero val
+					elif pupilDiams[j+k] != 0:
+						end, endidx = pupilDiams[j+k], j+k-1
+						break
+			interpolatedPupilDiams[startidx:endidx] = np.linspace(start,end,endidx-startidx)
+			totalInterpolated += endidx-startidx
+			i=endidx+1
+	print("%.2f%% of values are now interpolated" %(100*totalInterpolated/len(interpolatedPupilDiams)))
+	return interpolatedPupilDiams
+
+"""
 def interpolatePupilDiams(pupilDiams, times, dt, gapExtension = 0.2):
 	interpolatedPupilDiams = pupilDiams.copy()
 	i = 0
@@ -212,19 +307,39 @@ def interpolatePupilDiams(pupilDiams, times, dt, gapExtension = 0.2):
 			i = endidx
 
 	return interpolatedPupilDiams
-
-def removeSpeedOutliers(pupilDiams,times,n=3):
-	print("Removing speed outliers ")
+"""
+def removeSizeAndSpeedOutliers(pupilDiams,times,n_speed=2.5,n_size=2.5, plotHist=False): #following Leys et al 2013 
+	print("Removing speed outliers", end="")
 	pd = pupilDiams
-	speed = np.zeros(len(pd))
+	absSpeed = np.zeros(len(pd))
+	size = pupilDiams
 	for i in range(len(pupilDiams)):
-		speed[i]=max(np.abs((pd[i]-pd[i-1])/(times[i]-times[i-1])),np.abs((pd[(i+1)%len(pd)]-pd[i])/(times[(i+1)%len(pd)]-times[i])))
+		absSpeed[i]=max(np.abs((pd[i]-pd[i-1])/(times[i]-times[i-1])),np.abs((pd[(i+1)%len(pd)]-pd[i])/(times[(i+1)%len(pd)]-times[i])))
+
+	MAD_speed = np.median(np.abs(absSpeed - np.median(absSpeed)))
+	MAD_size = np.median(np.abs(size - np.median(size)))
+	threshold_speed_low = np.median(absSpeed) - n_speed*MAD_speed
+	threshold_size_low = np.median(size) - n_size*MAD_size
+	threshold_speed_high = np.median(absSpeed) + n_speed*MAD_speed
+	threshold_size_high = np.median(size) + n_size*MAD_size
+	pd = pd * (absSpeed<threshold_speed_high) * (absSpeed>threshold_speed_low)
+	print(" (%.2f%%) " %(100*(1-np.sum((absSpeed<threshold_speed_high) * (absSpeed>threshold_speed_low))/len(pd))),end="")
+	pd = pd * (pupilDiams>threshold_size_low) #only take away low sizes
+	print("and size lowliers (%.2f%%) " %(100*(1-np.sum((size>threshold_size_low))/len(pd))), end="")
+	print(" (additional %.2f%% removed vs raw)" %(100*(np.sum(pd == 0) - np.sum(pupilDiams==0))/len(pd)))
+	if plotHist == True:
+		fig, ax = plt.subplots(1,2)
+		ax[0].hist(np.log(absSpeed),bins=30)
+		ax[1].hist(size,bins=30)
+		ax[0].axvline(x=np.median(absSpeed),c='k')
+		ax[0].axvline(x=threshold_speed_low,c='k')
+		ax[0].axvline(x=threshold_speed_high,c='k')
+		ax[1].axvline(x=np.median(size),c='k')
+		ax[1].axvline(x=threshold_size_low,c='k')
+		ax[1].axvline(x=threshold_size_high,c='k')
+		ax[0].set_title("Abs Speed")
+		ax[1].set_title("Size")
 	
-	MAD = np.median(np.abs(speed - np.median(speed)))
-	threshold = np.median(speed) + 3*MAD
-	pd = pd * (speed<threshold)
-	plt.hist(speed,bins=30)
-	print(MAD)
 	return pd
 
 #upsample to make uniform time spacing ()
