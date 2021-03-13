@@ -117,7 +117,7 @@ def loadAndSyncPupilData(name,defaultMachine='EL',eye='right'): #EL
 			dt = np.mean((np.roll(times,-1) - times)[1:-1]); print('dt = %.4fs' %dt)
 			print("Percentage data missing: %.2f%%" %(100*len(np.where(pupilDiams == 0)[0])/len(pupilDiams)))
 			loadComplete=True
-			
+
 		except FileNotFoundError: 
 			print("No EyeLink (default) datafile found, trying PupilLabs")
 
@@ -200,12 +200,12 @@ Hence, ideally, new_dt should be < dt
 Basically, PupilLabs doesn't have a constant FPS which messes with later filtering etc. so this use lineaer interpolation to make it constant.
 """
 def upsample(pupilDiams, times, dt, new_dt = None, aligntimes = None): 
-	
+
 	if aligntimes is None: 
 		print("Upsampling pupil data to %gHz (current frequency ~%gHz): " %(int(1/new_dt),int(1/dt)), end="")
 	else: 
 		print("Sampling to match given time series:", end="")
-		
+
 	new_times = []
 	new_pupildiams = []
 	#instead of interpolation to a new constant dt_new it can instead interpolate to exactly match a currently existing timeseries array
@@ -343,7 +343,7 @@ def interpolatePupilDiams(pupilDiams, times, dt, gapExtension = 0.2):
 	isInterpolated = np.zeros(len(pupilDiams),dtype=bool)
 	while True:
 
-		
+
 		if i >= len(pupilDiams): break 
 
 		if pupilDiams[i] != 0: #the value exists and there is no problem
@@ -363,7 +363,7 @@ def interpolatePupilDiams(pupilDiams, times, dt, gapExtension = 0.2):
 					elif pupilDiams[i-k] != 0:
 						start, startidx = pupilDiams[i-k], i-k+1
 						break
-			
+
 			j = i 
 			while True: 
 				while True: #find 'end' of blink
@@ -387,7 +387,7 @@ def interpolatePupilDiams(pupilDiams, times, dt, gapExtension = 0.2):
 						break
 			interpolatedPupilDiams[startidx:endidx] = np.linspace(start,end,endidx-startidx)
 			isInterpolated[startidx:endidx] = np.ones(endidx-startidx,dtype=bool)
-			
+
 			i=endidx+1
 	print("%.2f%% of values are now interpolated" %(100*np.sum(isInterpolated)/len(isInterpolated)))
 	return interpolatedPupilDiams, isInterpolated
@@ -528,9 +528,10 @@ Loads Bonsai data file
 • Find first trial and aligns pupil times to this (t = 0 is now start of first trial)
 • Extracts and stores in a dictionary (different entry for each trial) and series of 'events times' within or 'facts'  about a trial
 eg:  times include •Trials_Start, Trial_End, Tone_Time, gapStart...
-     facts include: • whether tone was heard, ToneHeard, whether tone was a violation Pattern_Type, what ype of violation PatternID...
-Returns: dictionary with structure:
-	•dict[trialID][trialFactOrTimestamp]
+	 facts include: • whether tone was heard, ToneHeard, whether tone was a violation Pattern_Type, what ype of violation PatternID...
+Returns: 
+	•dictionary with structure: dict[trialID][trialFactOrTimestamp]
+	•pupilTimes - since these have been realigned to start of first trial 
 """
 def loadAndProcessTrialData(name, pupilTimes): #pupil times also passed as these are shifted relative to start of first trial
 	trials = {} #index of event
@@ -674,19 +675,29 @@ def loadAndProcessTrialData(name, pupilTimes): #pupil times also passed as these
 					elif firstLetter == '2': patternType = 1
 				except: patternType = 'na'
 				trials[i]['patternType'] = patternType
-				
-			
-
-
 
 	return trials, pupilTimes
 
 
+
+
+
+
+
+"""
+Given an alignEvent (e.g. ToneStart) it goes through the data dict (of form returned by loadAndProcessTrialData) 
+and for every trial it aligns pupilDiameters to the start of this event (+- some range)
+It then goes through a long list of conditions. If the condition number is in the conditionList 
+the trial is checked against that condition and if it fails the trial is excluded. This could be to, e.g., exclude first 50 trials or exclude trials which are heavily interpolated or filter only trials of a certain violation type
+Returns:
+	• array with apupilDiams for all statifying trials shape (n_valid_trials,len_pupil_range)
+	• a time array of the same size, shape (len_pupil_range) starting at tstart and ending at tend for plotting against 
+"""
 def sliceAndAlign(data, alignEvent = 'toneStart', conditionsList=[], tstart = -2, tend = 5): 
 
 	trials, pupilDiams, isInterpolated, times, dt = data['trialData'], data['pupilDiams'], data['isInterpolated'], data['times'], data['dt']
 	alignedTime = np.linspace(tstart,tend,int((tend - tstart)/dt))
-	
+
 	interpolationExclusion = 0
 	varianceExclusion = 0
 	noPupilDataExclusion = 0
@@ -763,11 +774,11 @@ def sliceAndAlign(data, alignEvent = 'toneStart', conditionsList=[], tstart = -2
 				(tones.index(trialTones[2]) >= tones.index(trialTones[1])) and
 				(tones.index(trialTones[3]) >= tones.index(trialTones[2]))): 
 				verdict *= False
-		
+
 		#Now exclude for non-experimental reasons (e.g. due to high interpolation or variance)
 		if verdict == True: 
 			validTrials += 1
-		
+
 		if pupilDiams[startidx:endidx].shape != (endidx-startidx,):
 			if verdict == True:
 				noPupilDataExclusion += 1
@@ -792,18 +803,37 @@ def sliceAndAlign(data, alignEvent = 'toneStart', conditionsList=[], tstart = -2
 				alignedData = np.vstack([alignedData,np.array(alignedPupilDiams)])
 			except: 
 				alignedData = np.array([np.array(alignedPupilDiams)])
-		
+
 	print("%g valid trials of which %g remain after: \n      %g excluded due to interpolation \n      %g excluded due to high variance \n      %g excluded due to no pupildata in this time range" %(validTrials, len(alignedData),interpolationExclusion,varianceExclusion,noPupilDataExclusion))
 	return alignedData, alignedTime
 
 
+
+
+
+
+
+"""
+Takes
+• participant data, a dictionary of data for participants (each dictionary is essential contains pupil data, times, trial data and more)
+• align event: what event each trial are we aligning to 
+• tsart and tend for plotting 
+• title for graph
+• test range: on what time range with significance tests be run
+• saveTitle: for saving pngs to file 
+• dd: a dictionary of things to plot. each dict contains:
+	•color of line
+	• conditionsList (passed to sliceAndAlign) this is key as it differentiates each one. e.g. one condition list may allow non-violation trials while the other only violation trials, thus these two cases can be compared on same plot. 
+	•range: if ('all') all satifactory trials else if ('early'/'mid'/'late', 15) on the earliest, middlest or latest 15 trials will be kept
+	
+	
+"""
 def plotAlignedPupilDiams(participantData,  #from particpants
 						  alignEvent='toneStart',
 						  tstart=-2, tend=5,
 						  title='Pupil response',
 						  testRange=[0,3],
 						  saveTitle=None,
-						  trialpreaverage = 0, #removes mean from  this many seconds BEFORE
 						  dd={
 							  '':     {'color':'C2','conditions':[0,4,5],'range':('all'),'plotTrials':True},
 							 }):
@@ -884,10 +914,6 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 	elif alignEvent == 'whiteCrossAppears':
 		ax.axvline(0.2,c='k',alpha=0.2,linestyle="--")
 
-
-
-
-
 	ax.legend(loc=1)
 	ax.set_ylim([bottom-0.5,top+0.5])
 	ax.axvline(0,c='k',alpha=0.5)
@@ -901,6 +927,25 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 	return fig, ax
 
 
+
+
+
+
+
+
+"""
+Statistical Test for whether two functions are statistically equal. 
+Take function 1 over some range with uncertainty on each point {f1,s1}
+Take function 2 over some range with uncertainty on each point {f2,s2}
+Substract them: {f1-f2,sqrt(s1^2 + s2^2)}
+These are the mean and std passed to the function. 
+If f1 and f2 are statistically equivalent we'd expect every point of (f1 - f2) to be drawn from gaussian of mean zero and std the value of sqrt(s1^2 + s2^2) at that point. 
+That is we'd expect this to be the same as {0,sqrt(s1^2 + s2^2)}
+For a random sample of {0,sqrt(s1^2 + s2^2)} we calculate log posterior 
+Do ntest of these we get a distribution. 
+Then, log posterior of the true {f1-f2,sqrt(s1^2 + s2^2)} can be compared to see if it is an outlier.
+The percentile is returned (>0.95 or <0.05 would be typical choices)
+"""
 def funcZeroTest(mean,std,ntests=1000,plot=False): #a significance test to tell if a function and it's std is zero 
 	logPs = []
 	for test in range(ntests):
