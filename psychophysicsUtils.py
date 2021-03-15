@@ -43,6 +43,12 @@ PUPIL DATA PROCESSING STUFF
 
 """
 Calculates time is seconds from a string "HH:MM:SS:msmsmsmsms....."
+
+Parameters: 
+•strTime: time reading of form "HH:MM:SS:msmsmsmsms....."
+
+Returns 
+• time in seconds (float) 
 """
 def scalarTime(strTime): # strTime of form 'HH:MM:SS:msmsmsmsms.....'
 	hours = int(strTime[0:2])*60*60
@@ -51,6 +57,18 @@ def scalarTime(strTime): # strTime of form 'HH:MM:SS:msmsmsmsms.....'
 	milliseconds = float('0.'+strTime[9:])
 	return hours+minutes+seconds+milliseconds #time in s
 
+
+"""
+Gets average time step between readings in a (possibly non-uniform) time series array
+
+Parameters:
+•timeArray: the time series array 
+
+Returns:
+• dt: the average time step for this array 
+"""
+def get_dt(timeArray):
+	return np.mean((np.roll(timeArray,-1) - timeArray)[1:-1])
 
 
 
@@ -61,10 +79,13 @@ Loads pupil data. Defaults to EyeLink which has name format "name_pupillometry.c
 If EyeLink, then data file has Bonsai timesyncs saved within it, these are used to sync time with Bonsai machine.
 If PupilLabs, timesync data saved in separate csv "name_timesync.csv". These are loaded and used to sync time.
 
+Parameters: 
+• name: name of participant. Will search for datafile "./Data/<name>_pupillometry[PL].csv"
+
 Returns
 •pupilDiams: array of pupil diameters, raw
-•times: time (corresponding to time on the Bonsai machine, for each pupil diameter reading)
-•dt: average time step
+•times: time series array one-to-one correspondence with each pupilDiameter (corresponding to time on the non-pupillometry machine)
+•dt: average time gap between readings
 """
 def loadAndSyncPupilData(name,defaultMachine='EL',eye='right'): #EL
 	loadComplete = False
@@ -114,8 +135,8 @@ def loadAndSyncPupilData(name,defaultMachine='EL',eye='right'): #EL
 			#converts to arrays and deletes data before firstSyncSignal since true time is unknown
 			pupilDiams = np.array(pupilDiams)[firstSyncSignalIdx:] 
 			times = np.array(times)[firstSyncSignalIdx:]
-			dt = np.mean((np.roll(times,-1) - times)[1:-1]); print('dt = %.4fs' %dt)
-			print("Percentage data missing: %.2f%%" %(100*len(np.where(pupilDiams == 0)[0])/len(pupilDiams)))
+			dt = np.mean((np.roll(times,-1) - times)[1:-1]); #print('dt = %.4fs' %dt)
+			#print("Percentage data missing: %.2f%%" %(100*len(np.where(pupilDiams == 0)[0])/len(pupilDiams)))
 			loadComplete=True
 
 		except FileNotFoundError: 
@@ -155,11 +176,11 @@ def loadAndSyncPupilData(name,defaultMachine='EL',eye='right'): #EL
 		#convert to array 
 		pupilDiams = np.array(pupilDiams_pl)
 		times = np.array(times_pl)
-		dt = np.mean((np.roll(times,-1) - times)[1:-1]); print('dt = %.4fs' %dt)
-		print("Percentage data missing : %.2f %%" %(100*len(np.where(pupilDiams == 0)[0])/len(pupilDiams)))  
+		dt = np.mean((np.roll(times,-1) - times)[1:-1]); #print('dt = %.4fs' %dt)
+		#print("Percentage data missing : %.2f %%" %(100*len(np.where(pupilDiams == 0)[0])/len(pupilDiams)))  
 		loadComplete = True
 
-	return pupilDiams, times, dt
+	return pupilDiams, times
 
 
 
@@ -167,8 +188,16 @@ def loadAndSyncPupilData(name,defaultMachine='EL',eye='right'): #EL
 
 
 """
-Loads timesync file made when pupillabs is recorded.
-Returns two array: one for timestamps from computer (presumably Bonsai or otherwise is running here)
+Loads timesync file made when PupilLabs is recorded.
+
+Parameters: 
+• name: the name of the participant. Will search for data "./Data/<name>_timesync.csv"
+
+Returns: 
+• array of computer timestamps
+• array of pupilLabs timestamps
+
+Returns two arrays: one for timestamps from computer (presumably Bonsai or otherwise is running here)
 one for simultaneous pupilLabs timestamps
 """
 def extractSyncTimes(name):
@@ -193,51 +222,65 @@ def extractSyncTimes(name):
 
 
 """
-Upsamples data to a higher frequency. 
-Officially this should be called 'uniformer' as it really just interpolates the time series to be uniformly spaced in time.
+Uniformly samples data array to a new constant frequency.
+
+Params: 
+• dataArray - the array to be uniformly sampled
+• timeArray - the time series for dataArray, one-to-one correspondence with dataArray
+• new_dt - new precise time separation between points 
+• aligntimes - if defined, dataArray is aligned presicely to the times in this array 
+
+Returns:
+• uniformly sampled dataArray
+• correspinding time series array 
+• new precise dt  
+
+It  interpolates the time series to be uniformly spaced in time.
 For this to be stable, however, it's better to increase the frequency, not decrease. 
-Hence, ideally, new_dt should be < dt
-Basically, PupilLabs doesn't have a constant FPS which messes with later filtering etc. so this use lineaer interpolation to make it constant.
+Hence, ideally, new_dt < dt
+Basically, PupilLabs doesn't have a constant FPS which messes with later filtering etc. so this use linear interpolation to make it constant.
 """
-def upsample(pupilDiams, times, dt, new_dt = None, aligntimes = None): 
+def uniformSample(dataArray, timeArray, new_dt = None, aligntimes = None): 
+
+	dt = get_dt(timeArray)
 
 	if aligntimes is None: 
-		print("Upsampling pupil data to %gHz (current frequency ~%gHz): " %(int(1/new_dt),int(1/dt)), end="")
+		print("Uniformly sampling  data to %gHz (current frequency ~%gHz)" %(int(1/new_dt),int(1/dt)))
 	else: 
-		print("Sampling to match given time series:", end="")
+		print("Sampling to match given time series")
 
-	new_times = []
-	new_pupildiams = []
+	newTimeArray = []
+	newDataArray = []
 	#instead of interpolation to a new constant dt_new it can instead interpolate to exactly match a currently existing timeseries array
 	#useful if you want compare two arrays recorded at the same time but with different precise FPSs
 	if aligntimes is None: 
-		t = times[0] 
-		pd = pupilDiams[0] 
+		t = timeArray[0] 
+		datum = dataArray[0] 
 		while True:
-			new_times.append(t)
-			new_pupildiams.append(pd)
+			newTimeArray.append(t)
+			newDataArray.append(datum)
 			t += new_dt
-			if t > times[-1]:
+			if t > timeArray[-1]:
 				break
 			else: #interpolate 
-				idx_r = np.searchsorted(times,t)
+				idx_r = np.searchsorted(timeArray,t)
 				idx_l = idx_r-1
-				delta = times[idx_r] - times[idx_l]
-				pd = ((t-times[idx_l])/delta)*pupilDiams[idx_l] + ((times[idx_r] - t)/delta)*pupilDiams[idx_r]
+				delta = timeArray[idx_r] - timeArray[idx_l]
+				datum = ((t-timeArray[idx_l])/delta)*dataArray[idx_l] + ((timeArray[idx_r] - t)/delta)*dataArray[idx_r]
 
 	elif aligntimes is not None: 
 		for t in aligntimes: 
-			if t > times[-1] or t < times[0]:
+			if t > timeArray[-1] or t < timeArray[0]:
 				pass
 			else: 
-				idx_r = np.searchsorted(times,t)
+				idx_r = np.searchsorted(timeArray,t)
 				idx_l = idx_r-1
-				delta = times[idx_r] - times[idx_l]
-				pd = ((t-times[idx_l])/delta)*pupilDiams[idx_l] + ((times[idx_r] - t)/delta)*pupilDiams[idx_r] #do linear interpolation
-				new_times.append(t)
-				new_pupildiams.append(pd)
-	new_dt = np.mean((np.roll(new_times,-1) - new_times)[1:-1]); print('dt = %.4fs' %new_dt)
-	return np.array(new_pupildiams), np.array(new_times), new_dt 
+				delta = timeArray[idx_r] - timeArray[idx_l]
+				datum = ((t-timeArray[idx_l])/delta)*dataArray[idx_l] + ((timeArray[idx_r] - t)/delta)*dataArray[idx_r] #do linear interpolation
+				newTimeArray.append(t)
+				newDataArray.append(datum)
+	new_dt = np.mean((np.roll(newTimeArray,-1) - newTimeArray)[1:-1]); #print('dt = %.4fs' %new_dt)
+	return np.array(newDataArray), np.array(newTimeArray)
 
 
 
@@ -247,18 +290,28 @@ def upsample(pupilDiams, times, dt, new_dt = None, aligntimes = None):
 
 """
 Removes outliers. Following Leys et al 2013 we use median absolute deviation, not std, to identify outliers.
-upper and lower outliers for absolute dialiton speed are excluded
-lower outliers for pupil diameter are excluded.
-Outliers in pupilDiams are set to zero. 
-Returns: pupilDiams with outliers set to zero and a boolean array identifying outliers
+Upper and lower outliers for absolute speed speed are excluded
+Only lower outliers and zero values for data are excluded
+Outliers in the data are set to zero. 
+
+Parameters: 
+•dataArray: array from which outliers is to be removed
+•timeArray: time series array for the idata array 
+•n_speed: threshold for data speed, d data / dt (equivalent to how many +- stds to accept)
+•n_size: threshold for data (equivalent to how many +- stds to accept)
+•plotHist: if True, plots data histograms showing thresholds
+
+Returns: 
+•pupilDiams with outliers set to zero
+•a boolean array identifying outliers (True) and inliers (False)
 """
-def removeOutliers(pupilDiams,times,n_speed=2.5,n_size=2.5, plotHist=False): #following Leys et al 2013 
+def removeOutliers(dataArray,timeArray,n_speed=2.5,n_size=2.5, plotHist=False): #following Leys et al 2013 
 	print("Removing speed outliers", end="")
-	pd = pupilDiams
-	absSpeed = np.zeros(len(pd))
-	size = pupilDiams
-	for i in range(len(pupilDiams)):
-		absSpeed[i]=max(np.abs((pd[i]-pd[i-1])/(times[i]-times[i-1])),np.abs((pd[(i+1)%len(pd)]-pd[i])/(times[(i+1)%len(pd)]-times[i])))
+	size = dataArray
+	absSpeed = np.zeros(len(dataArray))
+	data = dataArray
+	for i in range(len(dataArray)):
+		absSpeed[i]=max(np.abs((data[i]-data[i-1])/(timeArray[i]-timeArray[i-1])),np.abs((data[(i+1)%len(data)]-data[i])/(timeArray[(i+1)%len(data)]-timeArray[i])))
 
 	MAD_speed = np.median(np.abs(absSpeed - np.median(absSpeed)))
 	MAD_size = np.median(np.abs(size - np.median(size)))
@@ -266,11 +319,15 @@ def removeOutliers(pupilDiams,times,n_speed=2.5,n_size=2.5, plotHist=False): #fo
 	threshold_size_low = np.median(size) - n_size*MAD_size
 	threshold_speed_high = np.median(absSpeed) + n_speed*MAD_speed
 	threshold_size_high = np.median(size) + n_size*MAD_size
-	pd = pd * (absSpeed<threshold_speed_high) * (absSpeed>threshold_speed_low)
-	print(" (%.2f%%) " %(100*(1-np.sum((absSpeed<threshold_speed_high) * (absSpeed>threshold_speed_low))/len(pd))),end="")
-	pd = pd * (pupilDiams>threshold_size_low) #only take away low sizes
-	print("and size lowliers (%.2f%%) " %(100*(1-np.sum((size>threshold_size_low))/len(pd))), end="")
-	print(" (additional %.2f%% removed vs raw)" %(100*(np.sum(pd == 0) - np.sum(pupilDiams==0))/len(pd)))
+	
+	data = data * (absSpeed<threshold_speed_high) * (absSpeed>threshold_speed_low)
+	print(" (%.2f%%) " %(100*(1-np.sum((absSpeed<threshold_speed_high) * (absSpeed>threshold_speed_low))/len(data))),end="")
+	
+	data = data * (size>threshold_size_low) * (size!=0)#only take away low sizes and zero values
+	print("and size lowliers/zero (%.2f%%) " %(100*(1-np.sum((size>threshold_size_low)*((size!=0)))/len(data))), end="")
+	
+	print(" (additional %.2f%% removed vs raw)" %(100*(np.sum(data == 0) - np.sum(dataArray==0))/len(data)))
+	
 	if plotHist == True: #plots histograms and thresholds
 		fig, ax = plt.subplots(1,2)
 		ax[0].hist(np.log(absSpeed),bins=30)
@@ -281,10 +338,11 @@ def removeOutliers(pupilDiams,times,n_speed=2.5,n_size=2.5, plotHist=False): #fo
 		ax[1].axvline(x=np.median(size),c='k')
 		ax[1].axvline(x=threshold_size_low,c='k')
 		ax[1].axvline(x=threshold_size_high,c='k')
-		ax[0].set_title("Abs Speed")
-		ax[1].set_title("Size")
-	isOutlier = np.invert((absSpeed<threshold_speed_high) * (absSpeed>threshold_speed_low) * (pupilDiams>threshold_size_low))	
-	return pd, isOutlier
+		ax[0].set_title("data")
+		ax[1].set_title("d data / dt ")
+	isOutlier = np.invert((absSpeed<threshold_speed_high) * (absSpeed>threshold_speed_low) * (dataArray>threshold_size_low) * (dataArray!=0))	
+	
+	return data, isOutlier
 
 
 
@@ -294,33 +352,51 @@ def removeOutliers(pupilDiams,times,n_speed=2.5,n_size=2.5, plotHist=False): #fo
 
 """
 Downsample lowers the frequency of the data by bin averaging. 
-Usually data comes off machine ~1000Hz which is prohibitive for filtering. This is a stepping stone function, therefore. Not crucial but helpful.
-Bin averaging is lousy compared to the filtering done later, but probably okay as long as Hz is still much higher than the eventual low-pass filter freq. Currently set to 50Hz this is still far higher than pupil responses so averaging over bins this size shouldn't hurt. 
-Requires 'isOutlier' as when bin averaging if a value is an outlier this is excluded
-"""
-def downsample(pupilDiams, times, dt, Hz=50, isOutlier=None): 
+Often data may comes off machine at high frequencies which is prohibitive for filtering. This function, therefore not crucial but is helpful and saves you time by down sampling it to a lower frequency. Bin averaging is lousy compared to the filtering done later, but probably okay as long as the frequency (Hz) we bin average to is still much higher than the eventual frequency band. Currently set to 50Hz (bin = 0.02s) this is still far higher than pupil responses so averaging over bins this size shouldn't hurt. If a value in the data array is an outlier this is masked and will not contribute to the bin average. 
 
-	print("Downsampling pupil data to %gHz: " %Hz, end="")
-	downsampledPupilDiams = []
+Parameters: 
+• dataArray: the data array ot be down sampled
+• timeArray: the time series array corresponding to the data array
+• Hz: frequency to downsample to 
+• isOutlier: a boolean array same size as dataArray (True if the value in data array is an outlier/zero, otherwise False) Assumes no outliers if not provided
+
+Returns:
+• down sampled dataArray
+• correspondingly downSampled timeArray
+• downSampled isOutlier array. Now this is no longer a boolean array. It is a float array representing proportion of data in this bin which was an outlier. 
+"""
+def downsample(dataArray, timeArray, Hz=50, isOutlier=None): 
+
+	dt = get_dt(timeArray)
+
+	downsampledDataArray = []
 	downsampledTimes = []
-	if isOutlier is None:
-		isOutlier = np.zeros(len(pupilDiams),dtype=bool)
+	downsampledIsOutlier = []
+
+	if isOutlier is None: 
+		isOutlier = np.zeros(len(dataArray), dtype=bool) #assumes none are outliers otherwise
+
 	binSize = int((1/dt) / Hz) #current no. samples in one second / 50
-	for i in range(np.int(np.floor(len(pupilDiams)/binSize))):
+
+	for i in range(np.int(np.floor(len(dataArray)/binSize))):
 		outlierMask = np.where(isOutlier[i*binSize:(i+1)*binSize] == False)[0] #
 		if len(outlierMask) == 0: 
-			downsampledPupilDiams.append(0)
+			downsampledDataArray.append(0)
+			downsampledIsOutlier.append(1)
 		else:
-			downsampledPupilDiams.append(np.mean(pupilDiams[i*binSize:(i+1)*binSize][outlierMask]))
-		downsampledTimes.append(times[int((i+0.5)*binSize)])
-	downsampledPupilDiams = np.array(downsampledPupilDiams)
+			downsampledDataArray.append(np.mean(dataArray[i*binSize:(i+1)*binSize][outlierMask]))
+			downsampledIsOutlier.append(1-len(outlierMask)/binSize)
+		downsampledTimes.append(timeArray[int((i+0.5)*binSize)])
+	downsampledDataArray = np.array(downsampledDataArray)
 	downsampledTimes =  np.array(downsampledTimes)
+	downsampledIsOutlier = np.array(downsampledIsOutlier)
 
-	pupilDiams = downsampledPupilDiams
-	times = downsampledTimes
-	dt = np.mean((np.roll(times,-1) - times)[1:-1]); print('dt = %.4fs' %dt)
+	dataArray = downsampledDataArray
+	isOutlier = downsampledIsOutlier
+	timeArray = downsampledTimes
 
-	return pupilDiams, times, dt
+
+	return dataArray, timeArray, isOutlier
 
 
 
@@ -331,66 +407,79 @@ def downsample(pupilDiams, times, dt, Hz=50, isOutlier=None):
 
 """
 Performs interpolation to remove zero-values from the data
-If wherever a range of pupil diamteres are zero these are replaced with linear interpolation between 'gapExtension' seconds before and after  assuming these are non-zero (moving further out if they aren't).
-The values +- gapExtension are themselves also replaced since the blink or whatever maybe cause a smooth drop to zero we also want to remove
+Wherever a range of the data values are zero (the zero-range) these are replaced with linear interpolation between the interpolation points which are +- gapExtension seconds before and after the zero-range, assuming these are values are non-zero (moving further out if they aren't).
+The values between the zero-range and the interpolation points  are themselves also replaced since the blink or whatever maybe cause a smooth drop to zero we also want to remove
+
+Parameters: 
+• dataArray: the array to be interpolated
+• timeArray: corresponding time series array for the data array 
+• gapExtension: how many seconds before/after the gap to extend when doing linear interpolation
+
+Returns: 
+• interpolatedDataArray
+• isInterpolated: a boolean array same lengths as interpolatedDataArray, True if the value at this point is interpolated, not real
+
+
 """
-def interpolatePupilDiams(pupilDiams, times, dt, gapExtension = 0.2):
-	interpolatedPupilDiams = pupilDiams.copy()
-	i = 0
-	jump_dist = int(gapExtension / dt) #interpolates between gapExtension seconds before and after the points where it they fell to zero
+def interpolateArray(dataArray, timeArray, gapExtension = 0.2):
+	
+	interpolatedDataArray = dataArray.copy()
+	jump_dist = int(gapExtension / get_dt(timeArray)) #interpolates between gapExtension seconds before and after the points where it they fell to zero
 
 	print("Interpolating missing values: ", end="")
-	isInterpolated = np.zeros(len(pupilDiams),dtype=bool)
+	isInterpolated = np.zeros(len(dataArray),dtype=bool)
+	
+	i = 0
 	while True:
 
 
-		if i >= len(pupilDiams): break 
+		if i >= len(dataArray): break 
 
-		if pupilDiams[i] != 0: #the value exists and there is no problem
-			interpolatedPupilDiams[i] = pupilDiams[i] 
+		if dataArray[i] != 0: #the value exists and there is no problem
+			interpolatedDataArray[i] = dataArray[i] 
 			i += 1
 
-		elif pupilDiams[i] == 0:#do some interpolation
+		elif dataArray[i] == 0:#do some interpolation
 
 			k = jump_dist
 			while True: 
 				if i-k < 0: #edge case where we fall off array 
-					start, startidx = np.mean(pupilDiams), 0
+					start, startidx = np.mean(dataArray), 0
 					break
 				elif i-k >= 0:
-					if pupilDiams[i-k] == 0:
+					if dataArray[i-k] == 0:
 						k += 1 #keep extending till you get non-zero val
-					elif pupilDiams[i-k] != 0:
-						start, startidx = pupilDiams[i-k], i-k+1
+					elif dataArray[i-k] != 0:
+						start, startidx = dataArray[i-k], i-k+1
 						break
 
 			j = i 
 			while True: 
 				while True: #find 'end' of blink
-					if j >= len(pupilDiams):
+					if j >= len(dataArray):
 						j = j-1
 						break
-					if pupilDiams[j] == 0:
+					if dataArray[j] == 0:
 						j += 1
-					elif pupilDiams[j] !=0:
+					elif dataArray[j] !=0:
 						j = j-1
 						break
 
-				if j+k >= len(pupilDiams): #edge case where we fall off array 
-					end, endidx = np.mean(pupilDiams), len(pupilDiams)
+				if j+k >= len(dataArray): #edge case where we fall off array 
+					end, endidx = np.mean(dataArray), len(dataArray)
 					break
-				elif j+k < len(pupilDiams):
-					if pupilDiams[j+k] == 0:
+				elif j+k < len(dataArray):
+					if dataArray[j+k] == 0:
 						k += 1 #keep extending till you get non-zero val
-					elif pupilDiams[j+k] != 0:
-						end, endidx = pupilDiams[j+k], j+k-1
+					elif dataArray[j+k] != 0:
+						end, endidx = dataArray[j+k], j+k-1
 						break
-			interpolatedPupilDiams[startidx:endidx] = np.linspace(start,end,endidx-startidx)
+			interpolatedDataArray[startidx:endidx] = np.linspace(start,end,endidx-startidx)
 			isInterpolated[startidx:endidx] = np.ones(endidx-startidx,dtype=bool)
 
 			i=endidx+1
 	print("%.2f%% of values are now interpolated" %(100*np.sum(isInterpolated)/len(isInterpolated)))
-	return interpolatedPupilDiams, isInterpolated
+	return interpolatedDataArray, isInterpolated
 
 
 
@@ -398,19 +487,31 @@ def interpolatePupilDiams(pupilDiams, times, dt, gapExtension = 0.2):
 
 
 """
-filters the signal. A smooth logistic filter in frequecy space is fourier transformed into time domain
+Filters the signal. A smooth logistic filter in frequecy space is fourier transformed into time domain
 This is then convolved over the pupil diameter time series. 
 Can choose width and whether filter is high or low pass.
-Returns just filtered signal 
-"""
-def frequencyFilter(signal,time,dt,cutoff_freq,cutoff_width,highpass=False,plotStuff=False):
 
+Parameters:
+• dataArray: the array to be filtered 
+• timeArray: time series array for the data array 
+• cutoff_freq: point in frequency space where logistic sigmoid = 0.5
+• cutoff_width: width of logistic sigmoid
+• highpass: If True it does a highpass filter (removing drift), otherwise it does a lowpass filter (removing noise)
+• plotStuff: If True, shows some plots 
+
+Returns: 
+• the filtered data array 
+"""
+def frequencyFilter(dataArray,timeArray,cutoff_freq,cutoff_width,highpass=False,plotStuff=False):
+
+	dt = get_dt(timeArray)
+	
 	if highpass == True: name=('Highpass','below')
 	else: name = ('Lowpass','above')
 
 	print("%s filtering out frequencies %s %.2f +- %.2fHz" %(name[0], name[1], cutoff_freq, cutoff_width))
 	#derive the filter
-	f = fftpack.fftfreq(signal.size,dt)
+	f = fftpack.fftfreq(dataArray.size,dt)
 	fil = 1/(1 + np.exp(-(4/cutoff_width)*(np.abs(f) - cutoff_freq))) #logistic curve (abs for positive and negative frequencies)
 	if highpass == False: fil = 1 - fil 
 	plt.figure(0)
@@ -425,23 +526,22 @@ def frequencyFilter(signal,time,dt,cutoff_freq,cutoff_width,highpass=False,plotS
 	t = t[t.argsort()]
 
 
-	#convolve this with signal, then crop 
-	filtered_signal = np.convolve(signal,fil_ifft)
-	if signal.size%2 == 1: 
-		filtered_signal = filtered_signal[int(np.floor(signal.size/2)):-int(np.floor(signal.size/2))]
-	elif signal.size%2 == 0: 
-		filtered_signal = (0.5*(filtered_signal + np.roll(filtered_signal,1)))[int(np.floor(signal.size/2)):-int(np.floor(signal.size/2))+1]        
+	#convolve this with dataArray, then crop 
+	filtered_dataArray = np.convolve(dataArray,fil_ifft)
+	if dataArray.size%2 == 1: 
+		filtered_dataArray = filtered_dataArray[int(np.floor(dataArray.size/2)):-int(np.floor(dataArray.size/2))]
+	elif dataArray.size%2 == 0: 
+		filtered_dataArray = (0.5*(filtered_dataArray + np.roll(filtered_dataArray,1)))[int(np.floor(dataArray.size/2)):-int(np.floor(dataArray.size/2))+1]        
 	if plotStuff == True: 
 		fig, ax = plt.subplots(1,2, figsize=(4,2))
-		ax[0].plot(time,filtered_signal)
+		ax[0].plot(timeArray,filtered_dataArray)
 		ax[0].set_title("Filtered Signal")
-		ax[1].plot(time,signal)
+		ax[1].plot(timeArray,dataArray)
 		ax[1].set_title("Original Signal")
 		ax[0].set_xlabel("Time / s")
 		ax[1].set_xlabel("Time / s")
 
-
-	return filtered_signal
+	return filtered_dataArray
 
 
 
@@ -449,16 +549,26 @@ def frequencyFilter(signal,time,dt,cutoff_freq,cutoff_width,highpass=False,plotS
 
 
 """
-z-scores pupil diams
+z-scores data Array 
 norm range allows you to exclude early and late times from zscoring 
+
+Parameters: 
+• dataArray: to be zscored
+• timeArray: time series array for the data array 
+• normrange: in seconds [tstart, tend], which range to use for finding normalisation parameters (can be used to exclude early or late data if required)
+
+Returns: 
+• the z scored data array 
 """
-def zScore(pupilDiams, times=None, normrange=None):
+def zScore(dataArray, timeArray=None, normrange=None):
 	start_idx, end_idx = 0, -1
-	if ((times is not None) and (normrange is not None)):
-		start_idx, end_idx = np.argmin(np.abs(times-normrange[0])), np.argmin(np.abs(times-normrange[1]))
+	if ((timeArray is not None) and (normrange is not None)):
+		start_idx, end_idx = np.argmin(np.abs(timeArray-normrange[0])), np.argmin(np.abs(timeArray-normrange[1]))
 	print("z scoring")
-	zscorePupilDiams = (pupilDiams - np.mean(pupilDiams[start_idx:end_idx]))/np.std(pupilDiams[start_idx:end_idx])
-	return zscorePupilDiams
+	zscoreDataArray = (dataArray - np.mean(dataArray[start_idx:end_idx]))/np.std(dataArray[start_idx:end_idx])
+	return zscoreDataArray
+
+
 
 
 
@@ -466,24 +576,45 @@ def zScore(pupilDiams, times=None, normrange=None):
 
 """
 Plots two arrays and a histogram showing full timeseries and zoomed in time series of pupil diameters
+Data is coloured according to whehter it is an outlier (pink), not an outlier but interpolated (yellow) or neither (green)
+
+Paramters: 
+• dataArray: the data array to be plotted
+• timeArray: corresponding time series array
+• title: suptitle for the figure 
+• zoomRange: one of the subplots zooms in on the data in this region (seconds)
+• hist: False if you don't want a side histogram
+• ymin: bottom limit of yrange. Make "-ymax" if you want it to be the negative of ymax
+• ymax: top limit of yrange. If undefined chooses mean + 3std
+• isInterpolated: boolean array, True where a point is interpolated
+• isOutlier: float array between 0 and 1 showing proportion of data points in this bin (recall each data point is the bin average of many) were outliers
+
+Returns: 
+• fig (this is also plotted)
+• ax  
 """
-def plotPupilDiams(pupilDiams, times, dt, name=None, zoomRange = [0,60], saveName = None, hist=True, ymin=0, ymax=None, color='C0', isInterpolated=None):
+def plotData(dataArray, timeArray, title=None, zoomRange = [0,60], saveName = None, hist=True, ymin=0, ymax=None, isInterpolated=None, isOutlier=None):
+	
+	dt = get_dt(timeArray)
+	
 	if (isInterpolated is not None):
-		color = np.array([color]*len(pupilDiams))
+		color = np.array(['C0']*len(dataArray))
 		if (isInterpolated is not None):
 			color[np.where(isInterpolated == True)[0]] = np.array(['C5']*len(np.where(isInterpolated == True)[0]))
-	if ymax == None: 
-		ymax = np.max(pupilDiams)
+		if (isOutlier is not None):
+			color[np.where(isOutlier > 0.9)[0]] = np.array(['C1']*len(np.where(isOutlier > 0.9)[0]))
+	if ymax is None: 
+		ymax = np.mean(dataArray) + 3*np.std(dataArray)
 	if ymin=='-ymax': ymin = -ymax
 	fig, ax = plt.subplots(1,2,figsize=(4,2),sharey=True)
-	fig.suptitle(name)
-	ax[0].scatter((times[int(zoomRange[0]/dt):int(zoomRange[1]/dt)] - times[0]),pupilDiams[int(zoomRange[0]/dt):int(zoomRange[1]/dt)],c=color[int(zoomRange[0]/dt):int(zoomRange[1]/dt)],s=0.1)
+	fig.suptitle(title)
+	ax[0].scatter((timeArray[int(zoomRange[0]/dt):int(zoomRange[1]/dt)] - timeArray[0]),dataArray[int(zoomRange[0]/dt):int(zoomRange[1]/dt)],c=color[int(zoomRange[0]/dt):int(zoomRange[1]/dt)],s=0.1)
 	ax[0].set_ylim([ymin,ymax])
 	ax[0].set_ylabel('Pupil diameter')
 	ax[0].set_xlabel('Time from start of recording / s')
 	ax[0].set_title('Raw data (%gs)'%(zoomRange[1]-zoomRange[0]))
 
-	ax[1].scatter((times - times[0]),pupilDiams,c=color,s=0.1)
+	ax[1].scatter((timeArray - timeArray[0]),dataArray,c=color,s=0.1)
 	ax[1].set_ylim([ymin,ymax])
 	ax[1].set_ylabel('Pupil diameter')
 	ax[1].set_xlabel('Time from start of recording / s')
@@ -494,16 +625,73 @@ def plotPupilDiams(pupilDiams, times, dt, name=None, zoomRange = [0,60], saveNam
 		axHisty = divider.append_axes("right", 0.2, pad=0.02, sharey=ax[1])
 		axHisty.yaxis.set_tick_params(labelleft=False)
 		axHisty.xaxis.set_tick_params(labelbottom=False)
-		binwidth = (ymax-ymin)/40
-		ymax = np.max(np.abs(pupilDiams))
+		binwidth = (ymax-ymin)/80
+		ymax = np.max(np.abs(dataArray))
 		lim = (int(ymax/binwidth) + 1)*binwidth
 		bins = np.arange(-lim, lim + binwidth, binwidth)
-		axHisty.hist(pupilDiams, bins=bins, orientation='horizontal',color='C2',alpha=0.8)
+		axHisty.hist(dataArray, bins=bins, orientation='horizontal',color='C2',alpha=0.8)
 
 	if saveName is not None: 
 		plt.savefig('./figures/' + saveName + '.pdf',tightlayout=True, transparent=False,dpi=100)
 
 	return fig, ax
+
+
+
+
+
+
+
+"""
+Groups together all the functions for loading pupil and trial data for a given participant.
+The functions in this class basically just interface with the functions defined above. 
+
+Parameters:
+• name: the name of the participants. Functions will search for data like "./Data/<name>_... .csv"
+
+Returns: 
+Usually nothing, see individual functions. 
+"""
+class pupilDataClass():
+
+	def __init__(self,name):
+		self.name = name
+
+	def loadData(self, defaultMachine='EL',eye='right'):
+		self.rawPupilDiams, self.rawTimes = loadAndSyncPupilData(self.name, defaultMachine=defaultMachine,eye=eye)
+
+	def uniformSample(self):
+		self.pupilDiams, self.times = uniformSample(self.rawPupilDiams, self.rawTimes, new_dt = 0.5*get_dt(self.rawTimes))
+
+	def removeOutliers(self,n_speed=2.5,n_size=2.5):
+		self.pupilDiams, self.isOutlier = removeOutliers(self.pupilDiams,self.times,n_speed=n_speed,n_size=n_size)
+
+	def downSample(self):
+		self.pupilDiams, self.times, self.isOutlier = downsample(self.pupilDiams, self.times, isOutlier=self.isOutlier)
+
+	def interpolate(self, gapExtension=0.1):
+		self.pupilDiams, self.isInterpolated = interpolateArray(self.pupilDiams, self.times, gapExtension=gapExtension)
+		print("Data: %.2f%%  missing, %.2f%% outliers, %.2f%% interpolated" %(100*np.mean((self.rawPupilDiams == 0)), 100*np.mean(self.isOutlier),100*np.mean(self.isInterpolated)))
+
+	def frequencyFilter(self, lowF=0.1, lowFwidth=0.01, highF=4, highFwidth=0.5):
+		self.pupilDiams = frequencyFilter(self.pupilDiams,self.times,cutoff_freq=highF, cutoff_width=highFwidth, highpass=False)
+		self.pupilDiams = frequencyFilter(self.pupilDiams,self.times,cutoff_freq=lowF, cutoff_width=lowFwidth, highpass=True)
+
+	def zScore(self):
+		self.pupilDiams = zScore(self.pupilDiams, normrange=[60,self.times[-1]-60]) 
+
+	def plot(self, title=None, zoomRange = [0,60], saveName = None, hist=True, ymin='-ymax', ymax=None):
+		plotData(self.pupilDiams, self.times, title=title, zoomRange = zoomRange, saveName = saveName, ymin=ymin, ymax=ymax, isInterpolated=self.isInterpolated, isOutlier=self.isOutlier)
+
+	def loadAndProcessTrialData(self):
+		self.trialData, self.times = loadAndProcessTrialData(self.name, self.times)
+
+
+
+
+
+
+
 
 
 
@@ -695,7 +883,7 @@ Returns:
 """
 def sliceAndAlign(data, alignEvent = 'toneStart', conditionsList=[], tstart = -2, tend = 5): 
 
-	trials, pupilDiams, isInterpolated, times, dt = data['trialData'], data['pupilDiams'], data['isInterpolated'], data['times'], data['dt']
+	trials, pupilDiams, isOutlier, times, dt = data.trialData, data.pupilDiams, data.isOutlier, data.times, data.dt
 	alignedTime = np.linspace(tstart,tend,int((tend - tstart)/dt))
 
 	interpolationExclusion = 0
@@ -791,7 +979,7 @@ def sliceAndAlign(data, alignEvent = 'toneStart', conditionsList=[], tstart = -2
 				verdict *= False
 
 		if 13 in conditionsList: #exclude trials where over 20% of the pupil data is interpolated
-			if np.sum((isInterpolated[startidx:endidx]))/(endidx-startidx) >= 0.5:
+			if np.mean((isOutlier[startidx:endidx]))/(endidx-startidx) >= 0.2:
 				if verdict == True: 
 					interpolationExclusion += 1 
 				verdict *= False
@@ -825,8 +1013,8 @@ Takes
 	•color of line
 	• conditionsList (passed to sliceAndAlign) this is key as it differentiates each one. e.g. one condition list may allow non-violation trials while the other only violation trials, thus these two cases can be compared on same plot. 
 	•range: if ('all') all satifactory trials else if ('early'/'mid'/'late', 15) on the earliest, middlest or latest 15 trials will be kept
-	
-	
+
+
 """
 def plotAlignedPupilDiams(participantData,  #from particpants
 						  alignEvent='toneStart',
