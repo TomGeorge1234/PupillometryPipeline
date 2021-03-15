@@ -33,6 +33,11 @@ rcParams['figure.titlesize']='medium'
 rcParams['axes.prop_cycle']=cycler('color', ['#66c2a5','#fc8d62','#8da0cb','#e78ac3','#a6d854','#ffd92f','#e5c494','#b3b3b3'])
 
 
+
+
+
+
+
 """
 PUPIL DATA PROCESSING STUFF
 """
@@ -56,6 +61,9 @@ def scalarTime(strTime): # strTime of form 'HH:MM:SS:msmsmsmsms.....'
 	seconds = int(strTime[6:8])
 	milliseconds = float('0.'+strTime[9:])
 	return hours+minutes+seconds+milliseconds #time in s
+
+
+
 
 
 """
@@ -186,7 +194,6 @@ def loadAndSyncPupilData(name,defaultMachine='EL',eye='right'): #EL
 
 
 
-
 """
 Loads timesync file made when PupilLabs is recorded.
 
@@ -215,7 +222,6 @@ def extractSyncTimes(name):
 	computerTimestamp = np.array(computerTimestamp)
 	pupilLabTimestamp = np.array(pupilLabTimestamp)
 	return computerTimestamp, pupilLabTimestamp 
-
 
 
 
@@ -287,7 +293,6 @@ def uniformSample(dataArray, timeArray, new_dt = None, aligntimes = None):
 
 
 
-
 """
 Removes outliers. Following Leys et al 2013 we use median absolute deviation, not std, to identify outliers.
 Upper and lower outliers for absolute speed speed are excluded
@@ -348,8 +353,6 @@ def removeOutliers(dataArray,timeArray,n_speed=2.5,n_size=2.5, plotHist=False): 
 
 
 
-
-
 """
 Downsample lowers the frequency of the data by bin averaging. 
 Often data may comes off machine at high frequencies which is prohibitive for filtering. This function, therefore not crucial but is helpful and saves you time by down sampling it to a lower frequency. Bin averaging is lousy compared to the filtering done later, but probably okay as long as the frequency (Hz) we bin average to is still much higher than the eventual frequency band. Currently set to 50Hz (bin = 0.02s) this is still far higher than pupil responses so averaging over bins this size shouldn't hurt. If a value in the data array is an outlier this is masked and will not contribute to the bin average. 
@@ -397,9 +400,6 @@ def downsample(dataArray, timeArray, Hz=50, isOutlier=None):
 
 
 	return dataArray, timeArray, isOutlier
-
-
-
 
 
 
@@ -485,7 +485,6 @@ def interpolateArray(dataArray, timeArray, gapExtension = 0.2):
 
 
 
-
 """
 Filters the signal. A smooth logistic filter in frequecy space is fourier transformed into time domain
 This is then convolved over the pupil diameter time series. 
@@ -547,7 +546,6 @@ def frequencyFilter(dataArray,timeArray,cutoff_freq,cutoff_width,highpass=False,
 
 
 
-
 """
 z-scores data Array 
 norm range allows you to exclude early and late times from zscoring 
@@ -567,8 +565,6 @@ def zScore(dataArray, timeArray=None, normrange=None):
 	print("z scoring")
 	zscoreDataArray = (dataArray - np.mean(dataArray[start_idx:end_idx]))/np.std(dataArray[start_idx:end_idx])
 	return zscoreDataArray
-
-
 
 
 
@@ -694,11 +690,6 @@ class pupilDataClass():
 
 
 
-
-
-
-
-
 """
 TRIAL DATA PROCESSING AND PLOTTING
 """
@@ -708,15 +699,16 @@ TRIAL DATA PROCESSING AND PLOTTING
 
 
 
-
-
-
 """
-Loads Bonsai data file 
-• Find first trial and aligns pupil times to this (t = 0 is now start of first trial)
-• Extracts and stores in a dictionary (different entry for each trial) and series of 'events times' within or 'facts'  about a trial
+Loads Bonsai data file and extracts/calculates important data 
+Find first trial and aligns pupil times to this (t=0 is now start of first trial). Extracts and stores in a dictionary (different entry for each trial) and series of 'events times' within or 'facts'  about a trial
 eg:  times include •Trials_Start, Trial_End, Tone_Time, gapStart...
 	 facts include: • whether tone was heard, ToneHeard, whether tone was a violation Pattern_Type, what ype of violation PatternID...
+
+Parameters: 
+	• name: participant name, will search trial data file like "./Data/<name>_trial.csv"
+	• pupilTimes: time series array corresponding to the pupil diameter data. 
+	
 Returns: 
 	•dictionary with structure: dict[trialID][trialFactOrTimestamp]
 	•pupilTimes - since these have been realigned to start of first trial 
@@ -876,14 +868,21 @@ def loadAndProcessTrialData(name, pupilTimes): #pupil times also passed as these
 Given an alignEvent (e.g. ToneStart) it goes through the data dict (of form returned by loadAndProcessTrialData) 
 and for every trial it aligns pupilDiameters to the start of this event (+- some range)
 It then goes through a long list of conditions. If the condition number is in the conditionList 
-the trial is checked against that condition and if it fails the trial is excluded. This could be to, e.g., exclude first 50 trials or exclude trials which are heavily interpolated or filter only trials of a certain violation type
+the trial is checked against that condition and if it fails the trial is excluded.This could be to, e.g., exclude first 50 trials or exclude trials which are heavily interpolated or filter only trials of a certain violation type
+
+Parameters: 
+• data: the dataClass for a given participant (instance of pupilDataClass, above)
+• alignEvent: str, which event in the trial are we chopping and aligning the pupil data to
+• conditionsList: list of integers, corresponding to which conditions you want ot trigger
+• tstart: how many seconds after (negative for before) the alignEvent do you want to slice/plot
+• tend: until how many seconds after the alignEvent do yuo want to slice/plot
 Returns:
 	• array with apupilDiams for all statifying trials shape (n_valid_trials,len_pupil_range)
 	• a time array of the same size, shape (len_pupil_range) starting at tstart and ending at tend for plotting against 
 """
 def sliceAndAlign(data, alignEvent = 'toneStart', conditionsList=[], tstart = -2, tend = 5): 
 
-	trials, pupilDiams, isOutlier, times, dt = data.trialData, data.pupilDiams, data.isOutlier, data.times, data.dt
+	trials, pupilDiams, isOutlier, times, dt = data.trialData, data.pupilDiams, data.isOutlier, data.times, get_dt(data.times)
 	alignedTime = np.linspace(tstart,tend,int((tend - tstart)/dt))
 
 	interpolationExclusion = 0
@@ -1002,8 +1001,9 @@ def sliceAndAlign(data, alignEvent = 'toneStart', conditionsList=[], tstart = -2
 
 
 """
-Takes
-• participant data, a dictionary of data for participants (each dictionary is essential contains pupil data, times, trial data and more)
+Plots pupil diamters and error bars averaged over all subjects in participant data and averaged over all alike-trials for a given subject.
+Parameters: 
+• participant data: a dictionary of data for participants (each entry of the dictionary is an instance of the pupilDataClass, containing is essential contains pupil data, times, trial data and more)
 • align event: what event each trial are we aligning to 
 • tsart and tend for plotting 
 • title for graph
