@@ -3,6 +3,7 @@ import numpy as np
 from scipy import stats
 from tqdm.notebook import tqdm
 from scipy import fftpack
+from datetime import datetime 
 import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt 
 import matplotlib 
@@ -1026,6 +1027,8 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 							  '':     {'color':'C2','conditions':[0,4,5],'range':('all'),'plotTrials':True},
 							 }):
 
+	now = datetime.strftime(datetime.now(),'%y%m%d%H%M')
+	
 	fig, ax = plt.subplots(figsize=(3.5,2))
 
 	top, bottom = 0, 0
@@ -1110,7 +1113,7 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 	ax.set_title(title)
 
 	if saveTitle is not None: 
-		plt.savefig("./figures/"+saveTitle+".png", dpi=300,tight_layout=True)
+		plt.savefig(f"./figures/{saveTitle}_{now}.png", dpi=300,tight_layout=True)
 
 	return fig, ax
 
