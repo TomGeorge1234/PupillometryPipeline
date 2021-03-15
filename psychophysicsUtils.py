@@ -1,6 +1,7 @@
 import pandas as pd 
 import numpy as np 
 from scipy import stats
+import os 
 from tqdm.notebook import tqdm
 from scipy import fftpack
 from datetime import datetime 
@@ -1026,8 +1027,12 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 						  dd={
 							  '':     {'color':'C2','conditions':[0,4,5],'range':('all'),'plotTrials':True},
 							 }):
-
-	now = datetime.strftime(datetime.now(),'%y%m%d%H%M')
+	
+	today =  datetime.strftime(datetime.now(),'%y%m%d')
+	if not os.path.isdir(f"./figures/{today}/"):
+		os.mkdir(f"./figures/{today}/")
+	figdir = f"./figures/{today}/"
+	now = datetime.strftime(datetime.now(),'%H%M')
 	
 	fig, ax = plt.subplots(figsize=(3.5,2))
 
@@ -1113,10 +1118,21 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 	ax.set_title(title)
 
 	if saveTitle is not None: 
-		plt.savefig(f"./figures/{saveTitle}_{now}.png", dpi=300,tight_layout=True)
+		saveFigure(fig,saveTitle)
 
 	return fig, ax
 
+
+
+def saveFigure(fig,saveTitle=None):
+	today =  datetime.strftime(datetime.now(),'%y%m%d')
+	if not os.path.isdir(f"./figures/{today}/"):
+		os.mkdir(f"./figures/{today}/")
+	if saveTitle is None: 
+		saveTitle=""
+	figdir = f"./figures/{today}/"
+	now = datetime.strftime(datetime.now(),'%H%M')
+	fig.savefig(f"{figdir}{saveTitle}_{now}.png", dpi=300,tight_layout=True)
 
 
 
