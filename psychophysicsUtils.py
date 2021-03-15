@@ -679,7 +679,8 @@ class pupilDataClass():
 		self.pupilDiams = zScore(self.pupilDiams, normrange=[60,self.times[-1]-60]) 
 
 	def plot(self, title=None, zoomRange = [0,60], saveName = None, hist=True, ymin='-ymax', ymax=None):
-		plotData(self.pupilDiams, self.times, title=title, zoomRange = zoomRange, saveName = saveName, ymin=ymin, ymax=ymax, isInterpolated=self.isInterpolated, isOutlier=self.isOutlier)
+		fig, ax = plotData(self.pupilDiams, self.times, title=title, zoomRange = zoomRange, saveName = saveName, ymin=ymin, ymax=ymax, isInterpolated=self.isInterpolated, isOutlier=self.isOutlier)
+		saveFigure(fig,f"{self.name}_pupildata")
 
 	def loadAndProcessTrialData(self):
 		self.trialData, self.times = loadAndProcessTrialData(self.name, self.times)
