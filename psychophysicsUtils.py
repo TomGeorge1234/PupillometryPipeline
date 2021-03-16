@@ -248,14 +248,15 @@ For this to be stable, however, it's better to increase the frequency, not decre
 Hence, ideally, new_dt < dt
 Basically, PupilLabs doesn't have a constant FPS which messes with later filtering etc. so this use linear interpolation to make it constant.
 """
-def uniformSample(dataArray, timeArray, new_dt = None, aligntimes = None): 
+def uniformSample(dataArray, timeArray, new_dt = None, aligntimes = None, verbose = True): 
 
 	dt = get_dt(timeArray)
-
-	if aligntimes is None: 
-		print("Uniformly sampling  data to %gHz (current frequency ~%gHz)" %(int(1/new_dt),int(1/dt)))
-	else: 
-		print("Sampling to match given time series")
+	
+	if verbose == True:
+		if aligntimes is None: 
+			print("Uniformly sampling  data to %gHz (current frequency ~%gHz)" %(int(1/new_dt),int(1/dt)))
+		else: 
+			print("Sampling to match given time series")
 
 	newTimeArray = []
 	newDataArray = []
@@ -879,15 +880,16 @@ Parameters:
 • conditionsList: list of integers, corresponding to which conditions you want ot trigger
 • tstart: how many seconds after (negative for before) the alignEvent do you want to slice/plot
 • tend: until how many seconds after the alignEvent do yuo want to slice/plot
+• plotting dt: data will be uniformaly samplied to this frequncy for plotting
 Returns:
 	• array with apupilDiams for all statifying trials shape (n_valid_trials,len_pupil_range)
 	• a time array of the same size, shape (len_pupil_range) starting at tstart and ending at tend for plotting against 
 """
-def sliceAndAlign(data, alignEvent = 'toneStart', conditionsList=[], tstart = -2, tend = 5): 
+def sliceAndAlign(data, alignEvent = 'toneStart', conditionsList=[], tstart = -2, tend = 5, dt = 0.02): 
 
-	trials, pupilDiams, isOutlier, times, dt = data.trialData, data.pupilDiams, data.isOutlier, data.times, get_dt(data.times)
-	alignedTime = np.linspace(tstart,tend,int((tend - tstart)/dt))
+	trials, pupilDiams, isOutlier, times = data.trialData, data.pupilDiams, data.isOutlier, data.times
 
+	alignedData = None
 	interpolationExclusion = 0
 	varianceExclusion = 0
 	noPupilDataExclusion = 0
@@ -898,12 +900,11 @@ def sliceAndAlign(data, alignEvent = 'toneStart', conditionsList=[], tstart = -2
 
 		tevent = trials[i][alignEvent]
 		if type(tevent) is str:
-			startidx=0
-			endidx = startidx + int((tend - tstart)/dt)                 
-			verdict *= False
+			continue
+
 		else: 
 			startidx = np.argmin(np.abs(times - (tevent+tstart)))
-			endidx = startidx + int((tend - tstart)/dt)                 
+			endidx = np.argmin(np.abs(times - (tevent+tend)))
 
 		if 0 in conditionsList: #activate if you ONLY want the first 20 trials
 			if i >= 20:
@@ -966,33 +967,39 @@ def sliceAndAlign(data, alignEvent = 'toneStart', conditionsList=[], tstart = -2
 				verdict *= False
 
 		#Now exclude for non-experimental reasons (e.g. due to high interpolation or variance)
-		if verdict == True: 
+		verdict_ = verdict
+		if verdict_ == True: 
 			validTrials += 1
 
-		if pupilDiams[startidx:endidx].shape != (endidx-startidx,):
-			if verdict == True:
-				noPupilDataExclusion += 1
+			if ((len(pupilDiams[startidx:endidx]) != endidx-startidx) or 
+				(abs((times[endidx] - times[startidx]) - (tend - tstart)) > 0.1)):
+				if verdict_ == True:
+					noPupilDataExclusion += 1
 				verdict *= False
 
-		if 11 in conditionsList: #activate if you want to EXCLUDE trials where the pupil diameter goes over 4 std:
-			if np.max(np.abs(pupilDiams[startidx:endidx])) > 4:
-				if verdict == True: 
-					varianceExclusion += 1 
-				verdict *= False
+			else:
+				if 11 in conditionsList: #activate if you want to EXCLUDE trials where the pupil diameter goes over 4 std:
+					if np.max(np.abs(pupilDiams[startidx:endidx])) > 4:
+						if verdict_ == True: 
+							varianceExclusion += 1 
+						verdict *= False
 
-		if 13 in conditionsList: #exclude trials where over 20% of the pupil data is interpolated
-			if np.mean((isOutlier[startidx:endidx]))/(endidx-startidx) >= 0.2:
-				if verdict == True: 
-					interpolationExclusion += 1 
-				verdict *= False
+				if 13 in conditionsList: #exclude trials where over 20% of the pupil data is outliers
+					if np.mean((isOutlier[startidx:endidx]))/(endidx-startidx) >= 0.2:
+						if verdict_ == True:
+							interpolationExclusion += 1 
+						verdict *= False
 
 
 		if verdict==True:
-			alignedPupilDiams = pupilDiams[startidx:endidx]
-			try: 
-				alignedData = np.vstack([alignedData,np.array(alignedPupilDiams)])
-			except: 
+			n_timestep = int((tend - tstart)/dt)
+			alignedTime = np.linspace(tstart,tend,n_timestep)
+			alignedPupilDiams_desiredTimeArray = np.linspace(times[startidx],times[endidx],n_timestep)
+			alignedPupilDiams = uniformSample(pupilDiams,times,aligntimes=alignedPupilDiams_desiredTimeArray,verbose=False)[0]
+			if alignedData is None: 
 				alignedData = np.array([np.array(alignedPupilDiams)])
+			else:
+				alignedData = np.vstack([alignedData,np.array(alignedPupilDiams)])
 
 	print("%g valid trials of which %g remain after: \n      %g excluded due to interpolation \n      %g excluded due to high variance \n      %g excluded due to no pupildata in this time range" %(validTrials, len(alignedData),interpolationExclusion,varianceExclusion,noPupilDataExclusion))
 	return alignedData, alignedTime
@@ -1043,7 +1050,7 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 		for (p,participant) in enumerate(list(participantData.keys())):
 			print(participant +": ",end = '')
 			d,t = sliceAndAlign(participantData[participant], alignEvent=alignEvent,conditionsList=details['conditions'],tstart=tstart,tend=tend)
-
+			print(d.shape)
 
 			if dd[name]['range'][0] == 'first':
 				d = d[:dd[name]['range'][1]]
