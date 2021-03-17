@@ -39,10 +39,6 @@ rcParams['axes.prop_cycle']=cycler('color', ['#66c2a5','#fc8d62','#8da0cb','#e78
 
 
 
-
-
-
-
 """
 PUPIL DATA PROCESSING STUFF
 """
@@ -250,7 +246,6 @@ Hence, ideally, new_dt < dt
 Basically, PupilLabs doesn't have a constant FPS which messes with later filtering etc. so this use linear interpolation to make it constant.
 """
 def uniformSample(dataArray, timeArray, new_dt = None, aligntimes = None, verbose = True): 
-
 	dt = get_dt(timeArray)
 	
 	if verbose == True:
@@ -614,7 +609,7 @@ def plotData(dataArray, timeArray, title=None, zoomRange = [0,60], saveName = No
 	ax[0].set_ylabel('Pupil diameter')
 	ax[0].set_xlabel('Time from start of recording / s')
 	ax[0].set_title('Raw data (%gs)'%(zoomRange[1]-zoomRange[0]))
-	rect1 = matplotlib.patches.Rectangle((zoomRange[0]+0.2,ymin+0.02),zoomRange[1]-zoomRange[0]-0.4,ymax-ymin-0.04,linewidth=0.3,edgecolor='k',fill=False,linestyle="--")
+	rect1 = matplotlib.patches.Rectangle((zoomRange[0]+0.2,ymin+0.02),zoomRange[1]-zoomRange[0]-0.4,ymax-ymin-0.04,linewidth=0.3,edgecolor='darkgrey',fill=False,linestyle="--")
 	ax[0].add_patch(rect1)
 
 	ax[1].scatter((timeArray - timeArray[0])[::5],dataArray[::5],c=color[::5],s=0.05)
@@ -622,7 +617,7 @@ def plotData(dataArray, timeArray, title=None, zoomRange = [0,60], saveName = No
 	ax[1].set_ylabel('Pupil diameter')
 	ax[1].set_xlabel('Time from start of recording / s')
 	ax[1].set_title('Raw data (full)')
-	rect2 = matplotlib.patches.Rectangle((zoomRange[0],ymin),zoomRange[1]-zoomRange[0],ymax-ymin,linewidth=0.3,edgecolor='k',fill=False,linestyle="--")
+	rect2 = matplotlib.patches.Rectangle((zoomRange[0],ymin),zoomRange[1]-zoomRange[0],ymax-ymin,linewidth=0.3,edgecolor='darkgrey',fill=False,linestyle="--")
 	ax[1].add_patch(rect2)
 
 	if hist==True: 
