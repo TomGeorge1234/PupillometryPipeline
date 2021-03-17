@@ -145,7 +145,6 @@ def loadAndSyncPupilData(name,defaultMachine='EL',eye='right'): #EL
 			#converts to arrays and deletes data before firstSyncSignal since true time is unknown
 			pupilDiams = np.array(pupilDiams)[firstSyncSignalIdx:] 
 			times = np.array(times)[firstSyncSignalIdx:]
-			dt = np.mean((np.roll(times,-1) - times)[1:-1]); #print('dt = %.4fs' %dt)
 			#print("Percentage data missing: %.2f%%" %(100*len(np.where(pupilDiams == 0)[0])/len(pupilDiams)))
 			loadComplete=True
 
@@ -186,7 +185,6 @@ def loadAndSyncPupilData(name,defaultMachine='EL',eye='right'): #EL
 		#convert to array 
 		pupilDiams = np.array(pupilDiams_pl)
 		times = np.array(times_pl)
-		dt = np.mean((np.roll(times,-1) - times)[1:-1]); #print('dt = %.4fs' %dt)
 		#print("Percentage data missing : %.2f %%" %(100*len(np.where(pupilDiams == 0)[0])/len(pupilDiams)))  
 		loadComplete = True
 
@@ -1132,6 +1130,18 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 
 
 
+
+"""
+Saves a figure in "./figures/<todays_date>/<figure_name>_<todaystime>.png"
+Makes the folder if it doesn't exist
+
+Parameters: 
+• fig: the figure object
+• saveTitle: the title (a string) to save figure as
+
+Returns:
+Nothing is returned
+"""
 def saveFigure(fig,saveTitle=None):
 	today =  datetime.strftime(datetime.now(),'%y%m%d')
 	if not os.path.isdir(f"./figures/{today}/"):
@@ -1141,8 +1151,8 @@ def saveFigure(fig,saveTitle=None):
 	figdir = f"./figures/{today}/"
 	now = datetime.strftime(datetime.now(),'%H%M')
 	fig.savefig(f"{figdir}{saveTitle}_{now}.png", dpi=300,tight_layout=True)
-
-
+	
+	return
 
 
 
