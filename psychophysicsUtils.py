@@ -7,7 +7,7 @@ from scipy import stats
 import os 
 from tqdm.notebook import tqdm
 from scipy import fftpack
-from datetime import datetime 
+from datetime import datetime  
 import matplotlib.pyplot as plt
 import matplotlib.pyplot as plt 
 import matplotlib 
@@ -578,7 +578,7 @@ def zScore(dataArray, timeArray=None, normrange=None):
 Plots two arrays and a histogram showing full timeseries and zoomed in time series of pupil diameters
 Data is coloured according to whehter it is an outlier (pink), not an outlier but interpolated (yellow) or neither (green)
 
-Paramters: 
+Parameters: 
 • dataArray: the data array to be plotted
 • timeArray: corresponding time series array
 • title: suptitle for the figure 
@@ -595,6 +595,7 @@ Returns:
 """
 def plotData(dataArray, timeArray, title=None, zoomRange = [0,60], saveName = None, hist=True, ymin=0, ymax=None, isInterpolated=None, isOutlier=None):
 	
+	outlierThreshold = 0.9
 	dt = get_dt(timeArray)
 	
 	if (isInterpolated is not None):
@@ -602,7 +603,7 @@ def plotData(dataArray, timeArray, title=None, zoomRange = [0,60], saveName = No
 		if (isInterpolated is not None):
 			color[np.where(isInterpolated == True)[0]] = np.array(['C5']*len(np.where(isInterpolated == True)[0]))
 		if (isOutlier is not None):
-			color[np.where(isOutlier > 0.9)[0]] = np.array(['C1']*len(np.where(isOutlier > 0.9)[0]))
+			color[np.where(isOutlier > 0.9)[0]] = np.array(['C1']*len(np.where(isOutlier > outlierThreshold)[0]))
 	if ymax is None: 
 		ymax = np.mean(dataArray) + 3*np.std(dataArray)
 	if ymin=='-ymax': ymin = -ymax
@@ -613,14 +614,21 @@ def plotData(dataArray, timeArray, title=None, zoomRange = [0,60], saveName = No
 	ax[0].set_ylabel('Pupil diameter')
 	ax[0].set_xlabel('Time from start of recording / s')
 	ax[0].set_title('Raw data (%gs)'%(zoomRange[1]-zoomRange[0]))
+	rect1 = matplotlib.patches.Rectangle((zoomRange[0],ymin),zoomRange[1]-zoomRange[0],ymax-ymin,linewidth=0.5,edgecolor='k',fill=False,linestyle="--")
+	ax[0].add_patch(rect1)
 
-	ax[1].scatter((timeArray - timeArray[0]),dataArray,c=color,s=0.1)
+	ax[1].scatter((timeArray - timeArray[0])[::5],dataArray[::5],c=color[::5],s=0.05)
 	ax[1].set_ylim([ymin,ymax])
 	ax[1].set_ylabel('Pupil diameter')
 	ax[1].set_xlabel('Time from start of recording / s')
 	ax[1].set_title('Raw data (full)')
+	rect2 = matplotlib.patches.Rectangle((zoomRange[0],ymin),zoomRange[1]-zoomRange[0],ymax-ymin,linewidth=0.5,edgecolor='k',fill=False,linestyle="--")
+	ax[1].add_patch(rect2)
 
 	if hist==True: 
+		x_normal = dataArray[np.where(((isOutlier < outlierThreshold) * (isInterpolated == False)) == True)]
+		x_interpolated = dataArray[np.where(((isOutlier < outlierThreshold) * (isInterpolated == True)) == True)]
+		x_outlier = dataArray[np.where(isOutlier > outlierThreshold)]
 		divider = make_axes_locatable(ax[1])
 		axHisty = divider.append_axes("right", 0.2, pad=0.02, sharey=ax[1])
 		axHisty.yaxis.set_tick_params(labelleft=False)
@@ -629,7 +637,7 @@ def plotData(dataArray, timeArray, title=None, zoomRange = [0,60], saveName = No
 		ymax = np.max(np.abs(dataArray))
 		lim = (int(ymax/binwidth) + 1)*binwidth
 		bins = np.arange(-lim, lim + binwidth, binwidth)
-		axHisty.hist(dataArray, bins=bins, orientation='horizontal',color='C2',alpha=0.8)
+		axHisty.hist(np.array([x_outlier,x_interpolated,x_normal],dtype=object), bins=bins, orientation='horizontal',color=['C1','C5','C0'],alpha=0.8, stacked=True)
 
 	if saveName is not None: 
 		plt.savefig('./figures/' + saveName + '.pdf',tightlayout=True, transparent=False,dpi=100)
