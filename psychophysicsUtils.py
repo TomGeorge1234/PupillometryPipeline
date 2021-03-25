@@ -1038,7 +1038,8 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 						  saveTitle=None,
 						  dd={
 							  '':     {'color':'C2','conditions':[0,4,5],'range':('all'),'plotTrials':True},
-							 }):
+							 },
+						  plotVar = False):
 	
 	today =  datetime.strftime(datetime.now(),'%y%m%d')
 	if not os.path.isdir(f"./figures/{today}/"):
@@ -1047,6 +1048,9 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 	now = datetime.strftime(datetime.now(),'%H%M')
 	
 	fig, ax = plt.subplots(figsize=(3.5,2))
+	if plotVar == True: 
+		fig1, ax1 = plt.subplots(figsize=(3.5,1.5))
+
 
 	top, bottom = 0, 0
 	for name, details in list(dd.items()):
@@ -1081,6 +1085,15 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 
 		if np.max(dd[name]['mean']) > top: top = np.max(dd[name]['mean'])
 		if np.min(dd[name]['mean']) < bottom: bottom = np.min(dd[name]['mean'])
+
+		if plotVar == True: 
+			var = np.var(d,axis=0)
+			smoothedvar = []
+			for i in range(len(var)):
+				smoothedvar.append(np.mean(var[max(0,i-5):min(i+5,len(var))]))
+			ax1.set_ylim(bottom=0)
+			ax1.plot(t, smoothedvar,c=dd[name]['color'])
+
 
 
 	if len(dd) >= 2:
@@ -1129,8 +1142,25 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 	ax.set_ylabel('Normalised pupil diameter')
 	ax.set_title(title)
 
+
+
+
 	if saveTitle is not None: 
 		saveFigure(fig,saveTitle)
+
+	if plotVar == True:
+		ax1.set_ylabel("Variance")
+		ax1.axhline((bottom-0.5)+0.1*(top + 0.5 - bottom - 0.5),xmin=(testRange[0]-tstart)/(tend-tstart),xmax=(testRange[1]-tstart)/(tend-tstart),c='k',alpha=0.5,linewidth=1.5)
+		rect1 = matplotlib.patches.Rectangle((0,-10),0.125,20,linewidth=0,edgecolor='k',facecolor='k',alpha=0.1)
+		rect2 = matplotlib.patches.Rectangle((0.25,-10),0.125,20,linewidth=0,edgecolor='k',facecolor='k',alpha=0.1)
+		rect3 = matplotlib.patches.Rectangle((0.5,-10),0.125,20,linewidth=0,edgecolor='k',facecolor='k',alpha=0.1)
+		rect4 = matplotlib.patches.Rectangle((0.75,-10),0.125,20,linewidth=0,edgecolor='k',facecolor='k',alpha=0.1)
+		ax1.add_patch(rect1)
+		ax1.add_patch(rect2)
+		ax1.add_patch(rect3)
+		ax1.add_patch(rect4)
+		saveFigure(fig1,'var')
+
 
 	return fig, ax
 
