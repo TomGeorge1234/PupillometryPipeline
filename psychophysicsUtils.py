@@ -6,6 +6,7 @@ import numpy as np
 from scipy import stats
 import os 
 from tqdm.notebook import tqdm
+import pickle
 from scipy import fftpack
 from datetime import datetime  
 import matplotlib.pyplot as plt
@@ -1049,7 +1050,7 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 	
 	fig, ax = plt.subplots(figsize=(3.5,2))
 	if plotVar == True: 
-		fig1, ax1 = plt.subplots(figsize=(3.5,1.5))
+		fig1, ax1 = plt.subplots(figsize=(3.5,2))
 
 
 	top, bottom = 0, 0
@@ -1058,7 +1059,6 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 		for (p,participant) in enumerate(list(participantData.keys())):
 			print(participant +": ",end = '')
 			d,t = sliceAndAlign(participantData[participant], alignEvent=alignEvent,conditionsList=details['conditions'],tstart=tstart,tend=tend)
-			print(d.shape)
 
 			if dd[name]['range'][0] == 'first':
 				d = d[:dd[name]['range'][1]]
@@ -1114,7 +1114,6 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 		if testResult <= 0.05: tr = '*'
 		if testResult <= 0.01: tr = '**'
 		else: tr = 'ns'
-		print(ax.get_ylim())
 		ax.axhline((bottom-0.5)+0.1*(top + 0.5 - bottom - 0.5),xmin=(testRange[0]-tstart)/(tend-tstart),xmax=(testRange[1]-tstart)/(tend-tstart),c='k',alpha=0.5,linewidth=1.5)
 		ax.text(x=np.mean(testRange),y=(bottom-0.5)+0.15*(top + 0.5 - bottom - 0.5),s=tr,fontsize=5)
 
@@ -1150,16 +1149,19 @@ def plotAlignedPupilDiams(participantData,  #from particpants
 
 	if plotVar == True:
 		ax1.set_ylabel("Variance")
-		ax1.axhline((bottom-0.5)+0.1*(top + 0.5 - bottom - 0.5),xmin=(testRange[0]-tstart)/(tend-tstart),xmax=(testRange[1]-tstart)/(tend-tstart),c='k',alpha=0.5,linewidth=1.5)
 		rect1 = matplotlib.patches.Rectangle((0,-10),0.125,20,linewidth=0,edgecolor='k',facecolor='k',alpha=0.1)
 		rect2 = matplotlib.patches.Rectangle((0.25,-10),0.125,20,linewidth=0,edgecolor='k',facecolor='k',alpha=0.1)
 		rect3 = matplotlib.patches.Rectangle((0.5,-10),0.125,20,linewidth=0,edgecolor='k',facecolor='k',alpha=0.1)
 		rect4 = matplotlib.patches.Rectangle((0.75,-10),0.125,20,linewidth=0,edgecolor='k',facecolor='k',alpha=0.1)
+		ax1.axvline(0,c='k',alpha=0.5)
 		ax1.add_patch(rect1)
 		ax1.add_patch(rect2)
 		ax1.add_patch(rect3)
 		ax1.add_patch(rect4)
+		ax1.set_ylim(top=1.15)
 		saveFigure(fig1,'var')
+
+
 
 
 	return fig, ax
@@ -1190,6 +1192,37 @@ def saveFigure(fig,saveTitle=None):
 	
 	return
 
+
+
+
+
+
+def pickleAndSave(class_,name,saveDir='./savedItems/'):
+	"""pickles and saves a class
+	this is not an efficient way to save the data, but it is easy 
+	use carefully as pickles can HUGE (~gigabytes)
+	this will overwrite previous saves without warning
+	Args:
+		class_ (any class): the class/model to save
+		name (str): the name to save it under 
+		saveDir (str, optional): Directory to save into. Defaults to './savedItems/'.
+	"""	
+	with open(saveDir + name+'.pkl', 'wb') as output:
+		pickle.dump(class_, output, pickle.HIGHEST_PROTOCOL)
+	return 
+
+def loadAndDepickle(name, saveDir='./savedItems/'):
+	"""Loads and depickles a class saved using pickleAndSave
+	Args:
+		name (str): name it was saved as
+		saveDir (str, optional): Directory it was saved in. Defaults to './savedItems/'.
+
+	Returns:
+		class: the class/model/whatever it was
+	"""	
+	with open(saveDir + name+'.pkl', 'rb') as input:
+		item = pickle.load(input)
+	return item
 
 
 
