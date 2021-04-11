@@ -23,8 +23,6 @@ Further details can be found in the docstrings/comments in [psychophysicsUtils.p
 
 ## Trial data processing and integration with pupil data
 
-\includegraphics[]{../../../../Pictures/Screenshots/mem.png}
-
 ![](./figures/readme/readme2.png)
 
 [psychopyhsicsPipeline.ipynb](./psychopyhsicsPipeline.ipynb) shows how to use it. In summary: 
