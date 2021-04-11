@@ -21,7 +21,7 @@ Produced for PhD rotation in Akrami lab, for studying implicit statistical learn
 
 Further details can be found in the docstrings/comments in [psychophysicsUtils.py](./psychophysicsUtils.py)
 
-## Trial data 
+## Trial data processing and integration with pupil data
 
 ![](./figures/readme/readme2.png)
 
