@@ -2,6 +2,8 @@
 
 There are two main components to the code in this repo. The first constitute a pipeline for preprocessing pupil diameter data. The second combines this data and synchronises it it with trial data collected from the gap detection task and plots averaged pupil responses to various trial timestamps. At the heart of both of these processes is a data. class called `pupilDataClass()` which has a number of attribute functions described briefly below. 
 
+Produced for PhD rotation in Akrami lab, for studying implicit statistical learning in humans performing a gap detection task whilst being played structured tones in the background. Code should be adaptable for more general pupillometry projects. 
+
 ## Pupil diameter data processing
 
 ![](./figures/readme/readme1.png)
@@ -29,5 +31,5 @@ Further details can be found in the docstrings/comments in [psychophysicsUtils.p
 * `sliceAndAlign()` takes an event key (e.g. when the tone started) and other conditions and finds the times in every trial when this even occured. It then slices the pupil diameter data at these times. 
 * `plotAlignedPupilDiameters()`: takes all the pupil diameters slices returned from the above and plots then nicely, showing error bounds and performing statistical tests etc (example shown above)
 
-Produced for PhD rotation in Akrami lab, for studying implicit statistical learning in humans performing a gap detection task whilst being played structured tones in the background. Code should be adaptable for more general pupillometry projects. 
+
 
