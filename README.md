@@ -33,3 +33,12 @@ Further details can be found in the docstrings/comments in [psychophysicsUtils.p
 
 
 
+
+
+
+## Summary of preprocessing pipeline
+ Slightly out of date, more steps have been added since I made this figure but the keys ones are included here.
+ ![](./figures/readme/readme3.png)
+
+
+
